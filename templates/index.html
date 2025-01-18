@@ -50,7 +50,13 @@
                     <a class="nav-link" href="#">Trending</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="#">Search</a>
+                    <form method="POST" action="{{ url_for('search') }}">
+                        <div class="form-group">
+                            <label for="query">Search Query:</label>
+                            <input type="text" class="form-control" id="query" name="query" placeholder="Enter search term">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Search</button>
+                    </form>
                 </li>
             </ul>
         </div>
