@@ -71,8 +71,16 @@
                 <p>{{ video.snippet.description }}</p>
                 <div class="d-flex justify-content-around my-4">
                     <button class="btn btn-primary" onclick="shareVideo('{{ video_id }}')">Share</button>
-                    <a href="{{ url_for('download_video', video_id=video_id) }}" class="btn btn-secondary">Download</a>
                 </div>
+                <form action="{{ url_for('download_video', video_id=video_id) }}" method="post">
+                    <label for="format_code">Select Format:</label>
+                    <select name="format_code" id="format_code" class="form-control">
+                        {% for format in formats %}
+                        <option value="{{ format.format_id }}">{{ format.format_note }} ({{ format.ext }})</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-secondary mt-2">Download</button>
+                </form>
                 <h4 class="my-4">Related Videos</h4>
                 <div class="row">
                     {% for video in related_videos %}
@@ -105,10 +113,6 @@
             }, function (err) {
                 alert('Failed to copy video URL: ', err);
             });
-        }
-
-        function downloadVideo(videoId) {
-            alert('Download functionality is not implemented.');
         }
     </script>
 </body>
