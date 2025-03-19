@@ -1,5 +1,4 @@
 import os
-from urllib.parse import quote as url_quote
 import requests
 from flask import Flask, request, render_template, redirect, url_for, send_file, flash
 import yt_dlp
@@ -10,6 +9,8 @@ YOUTUBE_API_KEY = 'AIzaSyD9CPNuoMKVSY3v6A1KCIcnQg_7d0ZeScI'
 YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search'
 YOUTUBE_TRENDING_URL = 'https://www.googleapis.com/youtube/v3/videos'
 COOKIE_FILE_PATH = 'path_to_cookies.txt'  # Using your provided path
+
+DOWNLOAD_FOLDER = os.path.join(os.getcwd(), 'downloads')
 
 @app.route('/')
 def index():
@@ -32,60 +33,68 @@ def search_results():
 @app.route('/video/<video_id>')
 def video_detail(video_id):
     video = fetch_video_details(video_id)
-    if video:
-        video_title = video['snippet']['title']
-        video_owner = video['snippet']['channelTitle']
-        related_videos = fetch_related_videos(video_title, video_owner)
-    else:
-        related_videos = []
-    return render_template('video_detail.html', video=video, video_id=video_id, related_videos=related_videos)
-
-@app.route('/list_formats/<video_id>')
-def list_formats(video_id):
     ydl_opts = {
         'cookiefile': COOKIE_FILE_PATH,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36',
-        },
     }
     formats = []
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             result = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
             formats = result.get('formats', [])
+            print("Available formats:", formats)  # Print formats to console
     except yt_dlp.utils.DownloadError:
         flash('Error: Unable to fetch video formats. Please try again later.')
-    return render_template('list_formats.html', formats=formats, video_id=video_id)
-
-@app.route('/download/<video_id>', methods=['GET', 'POST'])
-def download_video(video_id):
-    if request.method == 'POST':
-        format_code = request.form.get('format_code')
-        ydl_opts = {
-            'format': format_code,
-            'merge_output_format': 'mp4',
-            'outtmpl': '%(title)s.%(ext)s',  # Use title as the file name
-            'noplaylist': True,
-            'nocheckcertificate': True,
-            'cookiefile': COOKIE_FILE_PATH,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36',
-            },
-            'postprocessors': [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4',
-            }],
-        }
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                result = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}')
-                filename = ydl.prepare_filename(result)
-            return send_file(filename, as_attachment=True)
-        except yt_dlp.utils.DownloadError as e:
-            flash(f'Error: Unable to download video. Please try again later. {e}')
-            return redirect(url_for('list_formats', video_id=video_id))
+    if video:
+        video_title = video['snippet']['title']
+        video_owner = video['snippet']['channelTitle']
+        related_videos = fetch_related_videos(video_title, video_owner)
     else:
-        return redirect(url_for('list_formats', video_id=video_id))
+        related_videos = []
+    return render_template('video_detail.html', video=video, formats=formats, video_id=video_id, related_videos=related_videos)
+
+@app.route('/download/<video_id>', methods=['POST'])
+def download_video(video_id):
+    format_code = request.form.get('format_code')
+    video_filename = os.path.join(DOWNLOAD_FOLDER, f"{video_id}_video.mp4")
+    audio_filename = os.path.join(DOWNLOAD_FOLDER, f"{video_id}_audio.m4a")
+    output_filename = os.path.join(DOWNLOAD_FOLDER, f"{video_id}_output.mp4")
+
+    os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+    # Download video
+    ydl_opts = {
+        'format': 'bestvideo',
+        'outtmpl': video_filename,
+        'noplaylist': True,
+        'nocheckcertificate': True,
+        'cookiefile': COOKIE_FILE_PATH,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36',
+        },
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f'https://www.youtube.com/watch?v={video_id}'])
+
+        # Download audio
+        ydl_opts['format'] = 'bestaudio'
+        ydl_opts['outtmpl'] = audio_filename
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f'https://www.youtube.com/watch?v={video_id}'])
+
+        # Merge video and audio
+        os.system(f'ffmpeg -i "{video_filename}" -i "{audio_filename}" -c:v copy -c:a aac "{output_filename}"')
+
+        # Remove intermediate files
+        os.remove(video_filename)
+        os.remove(audio_filename)
+
+        return send_file(output_filename, as_attachment=True)
+    except yt_dlp.utils.DownloadError as e:
+        flash(f'Error: Unable to download video. Please try again later. {e}')
+        return redirect(url_for('video_detail', video_id=video_id))
 
 def fetch_trending_videos(page_token=''):
     params = {
@@ -137,3 +146,6 @@ def fetch_related_videos(video_title, video_owner):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+
+
+
